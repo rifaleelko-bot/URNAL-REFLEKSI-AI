@@ -126,20 +126,23 @@ export const JournalProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, []);
 
   const deleteEntry = useCallback(async (id: string) => {
+    if (!user) return;
+    
     try {
       const { error } = await supabase
         .from('entries')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', user.id); // Additional safety check matching user ID
 
       if (error) throw error;
 
       setEntries((prev) => prev.filter(entry => entry.id !== id));
     } catch (error) {
       console.error("Error deleting entry:", error);
-      alert("Gagal menghapus entri.");
+      alert("Gagal menghapus entri. Silakan coba lagi.");
     }
-  }, []);
+  }, [user]);
 
   const getEntry = useCallback((id: string) => {
     return entries.find(e => e.id === id);

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useJournal } from '../contexts/JournalContext';
-import { Plus, LogOut, BookOpen, Trash2, Search, Calendar } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Trash2, Search, Calendar, Loader2 } from 'lucide-react';
 
 interface SidebarProps {
   currentEntryId: string | null;
@@ -14,6 +14,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentEntryId, onSelectEntry, isOpen
   const { user, logout } = useAuth();
   const { entries, deleteEntry } = useJournal();
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filteredEntries = entries.filter(entry => 
     entry.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -31,13 +32,20 @@ const Sidebar: React.FC<SidebarProps> = ({ currentEntryId, onSelectEntry, isOpen
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
-    e.stopPropagation(); // Mencegah klik tombol membuka jurnal
+    e.stopPropagation(); // Critical: prevents opening the entry when clicking delete
     
     // Konfirmasi sebelum menghapus
-    if (window.confirm('Hapus jurnal ini secara permanen? Tindakan ini tidak dapat dibatalkan.')) {
-      await deleteEntry(id);
-      // Jika jurnal yang dihapus sedang dibuka, tutup editor
-      if (currentEntryId === id) onSelectEntry(null);
+    if (window.confirm('Apakah Anda yakin ingin menghapus jurnal ini?')) {
+      setDeletingId(id);
+      try {
+        await deleteEntry(id);
+        // Jika jurnal yang dihapus sedang dibuka, tutup editor
+        if (currentEntryId === id) onSelectEntry(null);
+      } catch (error) {
+        console.error("Failed to delete", error);
+      } finally {
+        setDeletingId(null);
+      }
     }
   };
 
@@ -105,6 +113,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentEntryId, onSelectEntry, isOpen
             filteredEntries.map((entry) => {
               const date = formatDate(entry.createdAt);
               const isActive = currentEntryId === entry.id;
+              const isDeleting = deletingId === entry.id;
               
               return (
                 <div
@@ -120,7 +129,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentEntryId, onSelectEntry, isOpen
                       onSelectEntry(entry.id);
                     }
                   }}
-                  className={`w-full text-left p-3 rounded-xl transition-all group relative border cursor-pointer ${isActive ? 'bg-white border-brand-200 shadow-sm' : 'bg-transparent border-transparent hover:bg-white hover:border-slate-100'}`}
+                  className={`w-full text-left p-3 rounded-xl transition-all group relative border cursor-pointer ${isActive ? 'bg-white border-brand-200 shadow-sm' : 'bg-transparent border-transparent hover:bg-white hover:border-slate-100'} ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
                 >
                   <div className="flex gap-3">
                     {/* Date Box */}
@@ -140,15 +149,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentEntryId, onSelectEntry, isOpen
                       </p>
                     </div>
 
-                    {/* Actions - Always Visible Delete Button */}
+                    {/* Actions - Delete Button */}
                     <div className="flex flex-col justify-center items-end pl-2">
                       <button 
                         onClick={(e) => handleDelete(e, entry.id)}
-                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/50 group-hover:bg-white/50"
+                        disabled={isDeleting}
+                        className={`p-2 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/50 z-10 ${isDeleting ? 'bg-red-50 text-red-400 cursor-wait' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`}
                         title="Hapus Jurnal"
                         type="button"
                       >
-                        <Trash2 size={18} />
+                        {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                       </button>
                     </div>
                   </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useJournal } from '../contexts/JournalContext';
 import { analyzeJournalEntry } from '../services/geminiService';
 import Button from './Button';
-import { Sparkles, Save, Clock, Menu, Trash2 } from 'lucide-react';
+import { Sparkles, Save, Clock, Menu, Trash2, Loader2 } from 'lucide-react';
 
 interface EditorProps {
   entryId: string | null;
@@ -18,6 +18,7 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
   const [aiAnalysis, setAiAnalysis] = useState<string | undefined>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -47,6 +48,8 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
       setAiAnalysis('');
       setLastSaved(null);
     }
+    // Reset states when switching entries
+    setIsDeleting(false);
   }, [entryId, getEntry]);
 
   const handleSave = async () => {
@@ -73,8 +76,14 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
     if (!entryId) return;
     
     if (window.confirm('Hapus jurnal ini secara permanen?')) {
-      await deleteEntry(entryId);
-      onSelectEntry(null);
+      setIsDeleting(true);
+      try {
+        await deleteEntry(entryId);
+        onSelectEntry(null);
+      } catch (error) {
+        console.error(error);
+        setIsDeleting(false);
+      }
     }
   };
 
@@ -138,17 +147,19 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
              <Button
                variant="ghost"
                onClick={handleDelete}
+               isLoading={isDeleting}
+               disabled={isDeleting}
                className="text-slate-400 hover:text-red-600 hover:bg-red-50 px-3"
                title="Hapus Jurnal Ini"
              >
-               <Trash2 size={18} />
+               {!isDeleting && <Trash2 size={18} />}
              </Button>
            )}
 
            <Button 
              variant="ghost" 
              onClick={handleSave} 
-             disabled={isSaving || (!title && !content)}
+             disabled={isSaving || (!title && !content) || isDeleting}
              className="hidden sm:inline-flex"
            >
              <Save size={18} className="mr-2" />
@@ -159,7 +170,7 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
             variant="gradient" 
             onClick={handleAnalyze} 
             isLoading={isAnalyzing}
-            disabled={!content || content.length < 10}
+            disabled={!content || content.length < 10 || isDeleting}
             className="rounded-full shadow-indigo-200"
            >
              <Sparkles size={16} className={`mr-2 ${isAnalyzing ? 'animate-spin' : ''}`} />
@@ -179,6 +190,7 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
             className="w-full text-3xl md:text-4xl font-bold text-slate-900 placeholder:text-slate-300 border-none bg-transparent focus:outline-none focus:ring-0 mb-8 tracking-tight"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            disabled={isDeleting}
           />
           
           {/* Content Textarea */}
@@ -194,6 +206,7 @@ const Editor: React.FC<EditorProps> = ({ entryId, onSelectEntry, onMenuClick }) 
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}
+              disabled={isDeleting}
             />
           </div>
 
