@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { JournalProvider } from './contexts/JournalContext';
+import { JournalProvider, useJournal } from './contexts/JournalContext';
 import AuthForm from './components/AuthForm';
 import Sidebar from './components/Sidebar';
 import Editor from './components/Editor';
+import SetupGuide from './components/SetupGuide';
 
 const Dashboard: React.FC = () => {
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { isSetupRequired } = useJournal();
+
+  if (isSetupRequired) {
+    return <SetupGuide />;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -19,6 +25,7 @@ const Dashboard: React.FC = () => {
       />
       <Editor 
         entryId={currentEntryId} 
+        onSelectEntry={setCurrentEntryId}
         onMenuClick={() => setIsSidebarOpen(true)}
       />
     </div>

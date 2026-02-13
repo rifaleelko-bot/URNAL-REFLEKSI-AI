@@ -1,13 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { JournalEntry } from '../types';
+import { JournalEntry, JournalEntryDB } from '../types';
 import { useAuth } from './AuthContext';
+import { supabase } from '../services/supabaseClient';
 
 interface JournalContextType {
   entries: JournalEntry[];
-  addEntry: (title: string, content: string, aiAnalysis?: string) => void;
-  updateEntry: (id: string, title: string, content: string, aiAnalysis?: string) => void;
-  deleteEntry: (id: string) => void;
+  addEntry: (title: string, content: string, aiAnalysis?: string) => Promise<JournalEntry | null>;
+  updateEntry: (id: string, title: string, content: string, aiAnalysis?: string) => Promise<void>;
+  deleteEntry: (id: string) => Promise<void>;
   getEntry: (id: string) => JournalEntry | undefined;
+  isSetupRequired: boolean;
 }
 
 const JournalContext = createContext<JournalContextType | undefined>(undefined);
@@ -15,64 +17,128 @@ const JournalContext = createContext<JournalContextType | undefined>(undefined);
 export const JournalProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [isSetupRequired, setIsSetupRequired] = useState(false);
+
+  // Helper to map DB row to JournalEntry
+  const mapEntry = (dbEntry: JournalEntryDB): JournalEntry => ({
+    id: dbEntry.id,
+    userId: dbEntry.user_id,
+    title: dbEntry.title,
+    content: dbEntry.content,
+    createdAt: dbEntry.created_at,
+    updatedAt: dbEntry.updated_at,
+    aiAnalysis: dbEntry.ai_analysis,
+  });
 
   // Load entries when user changes
   useEffect(() => {
     if (user) {
-      const storedEntries = localStorage.getItem(`journal_entries_${user.id}`);
-      if (storedEntries) {
-        setEntries(JSON.parse(storedEntries));
-      } else {
-        setEntries([]);
-      }
+      fetchEntries();
     } else {
       setEntries([]);
     }
   }, [user]);
 
-  // Save entries whenever they change
-  useEffect(() => {
-    if (user && entries.length > 0) {
-      localStorage.setItem(`journal_entries_${user.id}`, JSON.stringify(entries));
-    } else if (user && entries.length === 0) {
-        // Clear storage if array is empty to keep it clean, or keep empty array
-        localStorage.setItem(`journal_entries_${user.id}`, JSON.stringify([]));
+  const fetchEntries = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('entries')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        // Code 42P01 indicates undefined table in Postgres
+        if (error.code === '42P01' || error.message.includes('does not exist')) {
+          setIsSetupRequired(true);
+        }
+        throw error;
+      }
+
+      if (data) {
+        setEntries(data.map((item: any) => mapEntry(item)));
+        setIsSetupRequired(false);
+      }
+    } catch (error) {
+      console.error("Error fetching entries:", error);
     }
-  }, [entries, user]);
+  };
 
-  const addEntry = useCallback((title: string, content: string, aiAnalysis?: string) => {
-    if (!user) return;
+  const addEntry = useCallback(async (title: string, content: string, aiAnalysis?: string) => {
+    if (!user) return null;
     
-    const newEntry: JournalEntry = {
-      id: crypto.randomUUID(),
-      userId: user.id,
-      title: title || 'Entri Tanpa Judul',
-      content,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      aiAnalysis,
-    };
+    try {
+      const { data, error } = await supabase
+        .from('entries')
+        .insert([
+          {
+            user_id: user.id,
+            title: title || 'Entri Tanpa Judul',
+            content,
+            ai_analysis: aiAnalysis,
+            updated_at: new Date().toISOString(),
+          }
+        ])
+        .select()
+        .single();
 
-    setEntries((prev) => [newEntry, ...prev]);
+      if (error) throw error;
+      if (data) {
+        const newEntry = mapEntry(data);
+        setEntries((prev) => [newEntry, ...prev]);
+        return newEntry;
+      }
+    } catch (error) {
+      console.error("Error adding entry:", error);
+      alert("Gagal menyimpan entri.");
+    }
+    return null;
   }, [user]);
 
-  const updateEntry = useCallback((id: string, title: string, content: string, aiAnalysis?: string) => {
-    setEntries((prev) => prev.map(entry => {
-      if (entry.id === id) {
-        return {
-          ...entry,
+  const updateEntry = useCallback(async (id: string, title: string, content: string, aiAnalysis?: string) => {
+    try {
+      const { error } = await supabase
+        .from('entries')
+        .update({
           title,
           content,
-          aiAnalysis: aiAnalysis || entry.aiAnalysis,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return entry;
-    }));
+          ai_analysis: aiAnalysis,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setEntries((prev) => prev.map(entry => {
+        if (entry.id === id) {
+          return {
+            ...entry,
+            title,
+            content,
+            aiAnalysis: aiAnalysis || entry.aiAnalysis,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return entry;
+      }));
+    } catch (error) {
+      console.error("Error updating entry:", error);
+    }
   }, []);
 
-  const deleteEntry = useCallback((id: string) => {
-    setEntries((prev) => prev.filter(entry => entry.id !== id));
+  const deleteEntry = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('entries')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setEntries((prev) => prev.filter(entry => entry.id !== id));
+    } catch (error) {
+      console.error("Error deleting entry:", error);
+      alert("Gagal menghapus entri.");
+    }
   }, []);
 
   const getEntry = useCallback((id: string) => {
@@ -80,7 +146,7 @@ export const JournalProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [entries]);
 
   return (
-    <JournalContext.Provider value={{ entries, addEntry, deleteEntry, updateEntry, getEntry }}>
+    <JournalContext.Provider value={{ entries, addEntry, deleteEntry, updateEntry, getEntry, isSetupRequired }}>
       {children}
     </JournalContext.Provider>
   );

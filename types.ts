@@ -15,6 +15,17 @@ export interface JournalEntry {
   mood?: 'happy' | 'neutral' | 'sad' | 'excited' | 'anxious';
 }
 
+// Database Row interface to match Supabase response snake_case
+export interface JournalEntryDB {
+  id: string;
+  user_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  ai_analysis?: string;
+}
+
 export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
